@@ -7,7 +7,6 @@ import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.support.v7.widget.Toolbar;
-import android.util.Log;
 import android.view.View;
 
 import com.android.volley.Request;
@@ -17,63 +16,52 @@ import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
 import com.example.ericbrenner.slackteamapp.Constants;
 import com.example.ericbrenner.slackteamapp.R;
-import com.example.ericbrenner.slackteamapp.Utilities;
 import com.example.ericbrenner.slackteamapp.adapters.MembersAdapter;
-import com.example.ericbrenner.slackteamapp.interfaces.SlackApiEndpointInterface;
 import com.example.ericbrenner.slackteamapp.listeners.RecyclerItemClickListener;
 import com.example.ericbrenner.slackteamapp.pojos.Member;
 import com.example.ericbrenner.slackteamapp.pojos.MembersResponse;
 import com.google.gson.Gson;
-import com.squareup.okhttp.Cache;
-import com.squareup.okhttp.Interceptor;
-import com.squareup.okhttp.OkHttpClient;
-
-import org.xmlpull.v1.XmlPullParserException;
 
 import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
-
-import retrofit.Call;
-import retrofit.Callback;
-import retrofit.GsonConverterFactory;
-import retrofit.Response;
-import retrofit.Retrofit;
 
 public class MainActivity extends AppCompatActivity {
 
-    private Call<MembersResponse> mCall;
-
     private final Gson gson = new Gson();
-
     private static final String REQUEST_URL =
             "https://slack.com/api/users.list?token=xoxp-5048173296-5048487710-19045732087-b5427e3b46";
     private static final String LATEST_RESPONSE_FILE = "LATEST_RESPONSE_FILE";
-
     public static final String REQUEST_TAG = "REQUEST_TAG";
     private RequestQueue mQueue;
+    View mProgressBar;
+    View mMessage;
+    RecyclerView mRecyclerView;
+    MembersAdapter mAdapter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setUpActionBar();
+        setUpRecyclerView();
+        mProgressBar = findViewById(R.id.progress_bar);
+        mMessage = findViewById(R.id.no_content_message);
+    }
 
-        //makeMembersRequest();
+    @Override
+    protected void onStart() {
+        super.onStart();
         makeRequest();
     }
 
     @Override
     public void onStop() {
         super.onStop();
-        //mCall.cancel();
         mQueue.cancelAll(REQUEST_TAG);
     }
 
@@ -81,63 +69,6 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
-    }
-
-    private OkHttpClient createCacheEnabledClient() {
-        final Interceptor REWRITE_CACHE_CONTROL_INTERCEPTOR = new Interceptor() {
-            @Override
-            public com.squareup.okhttp.Response intercept(Chain chain) throws IOException {
-                com.squareup.okhttp.Response originalResponse = chain.proceed(chain.request());
-                if (Utilities.isNetworkAvailable(MainActivity.this)) {
-                    int maxAge = 60; // read from cache for 1 minute
-                    return originalResponse.newBuilder()
-                            .header("Cache-Control", "public, max-age=" + maxAge)
-                            .build();
-                } else {
-                    int maxStale = 60 * 60 * 24 * 28; // tolerate 4-weeks stale
-                    return originalResponse.newBuilder()
-                            .header("Cache-Control", "public, only-if-cached, max-stale=" + maxStale)
-                            .build();
-                }
-            }
-        };
-
-        OkHttpClient client = new OkHttpClient();
-        client.networkInterceptors().add(REWRITE_CACHE_CONTROL_INTERCEPTOR);
-
-        File httpCacheDirectory = new File(this.getCacheDir(), Constants.CACHE_NAME);
-        int cacheSize = 10 * 1024 * 1024; // 10 MiB
-        Cache cache = new Cache(httpCacheDirectory, cacheSize);
-
-        client.setCache(cache);
-        return client;
-    }
-
-    private void makeMembersRequest() {
-        Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl(Constants.SLACK_API_BASE_URL)
-                .addConverterFactory(GsonConverterFactory.create())
-                .build();
-        SlackApiEndpointInterface apiService = retrofit.create(SlackApiEndpointInterface.class);
-
-        mCall = apiService.getMembersResponse();
-        mCall.enqueue(new Callback<MembersResponse>() {
-            @Override
-            public void onResponse(Response<MembersResponse> response, Retrofit retrofit) {
-                int statusCode = response.code();
-                MembersResponse membersResponse = response.body();
-                if (membersResponse.ok) {
-                    populateRecyclerView(membersResponse.members);
-                } else {
-                    Log.d(Constants.APP_TAG, membersResponse.error);
-                }
-            }
-
-            @Override
-            public void onFailure(Throwable t) {
-                Log.d(Constants.APP_TAG, t.getLocalizedMessage());
-            }
-        });
     }
 
     private void saveResponse(String response) {
@@ -173,24 +104,19 @@ public class MainActivity extends AppCompatActivity {
         return sb.toString();
     }
 
-    private boolean fileExistance(String fname){
-        File file = getFileStreamPath(fname);
+    private boolean fileExists(String fileName){
+        File file = getFileStreamPath(fileName);
         return file.exists();
     }
 
-    private void handleGoodResponse(String response) {
-        saveResponse(response);
-        MembersResponse membersResponse = gson.fromJson(response, MembersResponse.class);
-        populateRecyclerView(membersResponse.members);
-    }
-
     private void handleBadOrMissingResponse() {
-        if (fileExistance(LATEST_RESPONSE_FILE)) {
+        if (fileExists(LATEST_RESPONSE_FILE)) {
+            mMessage.setVisibility(View.GONE);
             String savedResponse = getLastSavedResponse();
             MembersResponse membersResponse = gson.fromJson(savedResponse, MembersResponse.class);
             populateRecyclerView(membersResponse.members);
         } else {
-            findViewById(R.id.no_content_message).setVisibility(View.VISIBLE);
+            mMessage.setVisibility(View.VISIBLE);
         }
     }
 
@@ -202,38 +128,45 @@ public class MainActivity extends AppCompatActivity {
                     public void onResponse(String response) {
                         MembersResponse membersResponse = gson.fromJson(response, MembersResponse.class);
                         if (membersResponse.ok) {
-                            handleGoodResponse(response);
+                            mMessage.setVisibility(View.GONE);
+                            populateRecyclerView(membersResponse.members);
+                            saveResponse(response);
                         } else {
                             handleBadOrMissingResponse();
                         }
+                        mProgressBar.setVisibility(View.GONE);
                     }
                 }, new com.android.volley.Response.ErrorListener() {
             @Override
             public void onErrorResponse(VolleyError error) {
                 handleBadOrMissingResponse();
+                mProgressBar.setVisibility(View.GONE);
             }
         });
         stringRequest.setTag(REQUEST_TAG);
         mQueue.add(stringRequest);
     }
 
-    private void populateRecyclerView(ArrayList<Member> members) {
-        final MembersAdapter adapter = new MembersAdapter(members);
-        RecyclerView recyclerView = (RecyclerView) findViewById(R.id.members_recycler_view);
-        recyclerView.setHasFixedSize(true);
+    private void setUpRecyclerView() {
+        mRecyclerView = (RecyclerView) findViewById(R.id.members_recycler_view);
+        mRecyclerView.setHasFixedSize(true);
         RecyclerView.LayoutManager layoutManager = new LinearLayoutManager(MainActivity.this);
-        recyclerView.setLayoutManager(layoutManager);
-        recyclerView.addOnItemTouchListener(
+        mRecyclerView.setLayoutManager(layoutManager);
+        mRecyclerView.addOnItemTouchListener(
                 new RecyclerItemClickListener(MainActivity.this, new RecyclerItemClickListener.OnItemClickListener() {
                     @Override
                     public void onItemClick(View view, int position) {
-                        Member member = adapter.getItem(position);
+                        Member member = mAdapter.getItem(position);
                         Intent intent = new Intent(MainActivity.this, ProfileActivity.class);
                         intent.putExtra(Constants.KEY_MEMBER, member);
                         startActivity(intent);
                     }
                 })
         );
-        recyclerView.setAdapter(adapter);
+    }
+
+    private void populateRecyclerView(ArrayList<Member> members) {
+        mAdapter = new MembersAdapter(members);
+        mRecyclerView.setAdapter(mAdapter);
     }
 }
