@@ -77,6 +77,9 @@ public class ProfileActivity extends AppCompatActivity {
         nameText.setText(member.name);
         nameText.setTextColor(Color.parseColor(Utilities.formatColorString(member.color)));
 
+        TextView titleText = (TextView)findViewById(R.id.profile_title);
+        titleText.setText(member.profile.title);
+
         TextView realNameText = (TextView)findViewById(R.id.profile_real_name);
         realNameText.setText(member.profile.realName);
 
