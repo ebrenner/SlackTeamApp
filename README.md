@@ -8,3 +8,5 @@ This is a demo app (using the slack api). It consists of a starting screen displ
 -Gson used for JSON parsing because it is a convenient way to convert JSON directly to pojos
 
 -Picasso used to load images from url and for caching
+
+Note that I imported Volley as a module. You will have to do the same if you want to run this project after downloading.
